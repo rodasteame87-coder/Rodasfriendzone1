@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>RodasFriendZone Bingo</title>
+<style>
+:root{color-scheme:dark;--bg:#3c0878;--panel:#57109a;--panel2:#6d19b7;--text:#fff;--muted:#d8c5ef;--green:#19d66b;--red:#ef3e51;--gray:#77728a;--gold:#ffc857;--line:#8c4dca}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+#app{min-height:100vh;background:linear-gradient(180deg,#4a0b91 0%,#30055f 100%);padding:14px 12px 24px}
+.top{display:flex;gap:8px;margin-bottom:12px}.pill{flex:1;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:8px 10px;text-align:center;font-size:12px}.pill b{display:block;font-size:14px;margin-top:3px}
+.header{display:flex;align-items:center;justify-content:space-between;margin:8px 2px 12px}.back{border:0;background:none;color:#fff;font-weight:700;font-size:14px}.title{font-weight:900;font-size:19px}.refresh{border:0;background:#6814a9;color:#fff;border-radius:12px;padding:9px 12px;font-size:18px}
+.timer{background:rgba(0,0,0,.16);border-radius:18px;padding:14px;text-align:center;margin-bottom:12px}.timer .num{font-size:30px;font-weight:900}.timer small{color:var(--muted)}
+.notice{display:none;background:#25103e;border:1px solid var(--line);padding:10px;border-radius:12px;margin-bottom:10px;text-align:center}.notice.show{display:block}
+.grid{display:grid;grid-template-columns:repeat(10,1fr);gap:5px}.cell{border:0;border-radius:8px;aspect-ratio:1;background:#24cf69;color:#082a18;font-weight:900;font-size:13px}.cell.taken{background:#ef3e51;color:#fff}.cell.mine{outline:3px solid #fff;outline-offset:1px}.cell:disabled{opacity:.92}
+.actions{display:flex;gap:8px;margin-top:12px}.action{flex:1;border:0;border-radius:13px;padding:13px;font-weight:900;font-size:15px}.secondary{background:#76518f;color:#fff}.primary{background:#fff;color:#4a0b91}
+.section{background:rgba(0,0,0,.12);border-radius:18px;padding:12px;margin-top:12px}.section h3{margin:0 0 10px}.status{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-bottom:10px}
+.called{display:flex;gap:6px;overflow:auto;padding-bottom:5px}.ball{min-width:40px;height:40px;border-radius:50%;background:#77728a;display:grid;place-items:center;font-weight:900}.ball.current{background:var(--green);color:#062817}.ball.recent{background:var(--red)}
+.bingo-head,.bingo-row{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}.bingo-head div{text-align:center;font-weight:900;padding:6px}.bingo-cell{aspect-ratio:1;display:grid;place-items:center;border-radius:9px;background:#fff;color:#38105e;font-weight:900;font-size:16px}.bingo-cell.marked{background:var(--green);color:#072b17}.bingo-cell.free{font-size:10px;background:var(--gold);color:#442600}
+.winner{background:#fff;color:#3b0a61;border-radius:18px;padding:16px;text-align:center;margin-top:12px}.winner b{font-size:23px}.hidden{display:none}
+@media(max-width:380px){.grid{gap:3px}.cell{font-size:11px}.bingo-cell{font-size:14px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top">
+    <div class="pill">Wallet<b id="balance">1,000</b></div>
+    <div class="pill">Players<b id="players">0</b></div>
+    <div class="pill">Game<b id="game">#1</b></div>
+  </div>
+
+  <div id="selectionView">
+    <div class="header"><button class="back" onclick="backToRooms()">← Back to Rooms</button><div class="title">Cartela</div><button class="refresh" onclick="refreshState()">↻</button></div>
+    <div class="timer"><div class="num" id="timer">30</div><small>Choose one Cartela before the timer ends</small></div>
+    <div class="notice" id="notice"></div>
+    <div class="grid" id="grid"></div>
+    <div class="actions"><button class="action secondary" onclick="leaveCartela()">Leave</button><button class="action primary" onclick="proceed()">Proceed</button></div>
+  </div>
+
+  <div id="gameView" class="hidden">
+    <div class="header"><button class="back" onclick="backToRooms()">← Back to Rooms</button><div class="title">Bingo</div><button class="refresh" onclick="refreshState()">↻</button></div>
+    <div class="section"><div class="status"><span>Cartela <b id="myCartela">—</b></span><span>Last call <b id="current">—</b></span></div><div class="called" id="called"></div></div>
+    <div class="section"><div class="bingo-head"><div>B</div><div>I</div><div>N</div><div>G</div><div>O</div></div><div id="bingoCard"></div></div>
+    <div id="winner" class="winner hidden"><b>🎉 BINGO!</b><div id="winnerText"></div></div>
+  </div>
+</div>
+<script>
+const tg=window.Telegram?.WebApp; if(tg){tg.ready();tg.expand();}
+let state=null;let demoUser=1;
+function headers(){return {'Content-Type':'application/json','X-Telegram-Init-Data':tg?.initData||''}}
+let localDemo = location.protocol === 'file:';
+let demoState = {state:'selection',gameNumber:1,selectionSeconds:30,taken:[],myCartela:null,players:0,drawn:[],current:null,card:null,marked:null,winner:null,balance:1000};
+function makeDemoCard(){const ranges=[[1,15],[16,30],[31,45],[46,60],[61,75]];const card=[];for(const [a,b] of ranges){const nums=[];for(let n=a;n<=b;n++)nums.push(n);for(let i=nums.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[nums[i],nums[j]]=[nums[j],nums[i]]}card.push(nums.slice(0,5));}card[2][2]=0;return card;}
+const demoCards=Object.fromEntries(Array.from({length:100},(_,i)=>[i+1,makeDemoCard()]));
+function demoPayload(){return JSON.parse(JSON.stringify(demoState));}
+async function api(action,method='GET',body=null){
+  if(localDemo){
+    if(action==='state') return demoPayload();
+    if(action==='select'){const n=Number(body?.cartela);if(demoState.state!=='selection')throw new Error('Game already started.');if(!Number.isInteger(n)||n<1||n>100)throw new Error('Choose a Cartela from 1 to 100.');if(demoState.myCartela)throw new Error('You already selected a Cartela.');if(demoState.taken.includes(n))throw new Error('Cartela '+n+' is already taken. Choose another one.');demoState.myCartela=n;demoState.taken.push(n);demoState.players=1;return demoPayload();}
+    if(action==='leave'){if(demoState.myCartela){demoState.taken=demoState.taken.filter(n=>n!==demoState.myCartela);demoState.myCartela=null;demoState.players=0;}return demoPayload();}
+    throw new Error('Unknown action');
+  }
+  const r=await fetch('/api/'+action,{method,headers:headers(),body:body?JSON.stringify(body):null});
+  let d; try{d=await r.json()}catch{throw new Error('Server returned an invalid response. Check the Render deployment.')} if(!r.ok)throw new Error(d.error||'Something went wrong');return d
+}
+function showNotice(msg){const n=document.getElementById('notice');n.textContent=msg;n.classList.add('show');clearTimeout(window.nt);window.nt=setTimeout(()=>n.classList.remove('show'),3000)}
+function render(){
+ if(!state)return; document.getElementById('balance').textContent=Number(state.balance).toLocaleString();document.getElementById('players').textContent=state.players;document.getElementById('game').textContent='#'+state.gameNumber;
+ const selection=state.state==='selection';document.getElementById('selectionView').classList.toggle('hidden',!selection);document.getElementById('gameView').classList.toggle('hidden',selection);
+ if(selection){document.getElementById('timer').textContent=state.selectionSeconds;const taken=new Set(state.taken);const grid=document.getElementById('grid');grid.innerHTML='';for(let i=1;i<=100;i++){const b=document.createElement('button');b.className='cell'+(taken.has(i)?' taken':'')+(state.myCartela===i?' mine':'');b.textContent=i;b.disabled=taken.has(i);b.onclick=()=>select(i);grid.appendChild(b)}}
+ else {document.getElementById('myCartela').textContent=state.myCartela||'—';document.getElementById('current').textContent=state.current||'—';renderCalled();renderCard();if(state.state==='ended'&&state.winner){document.getElementById('winner').classList.remove('hidden');document.getElementById('winnerText').textContent=state.winner.cartela?'Cartela '+state.winner.cartela+' won this game. New selection is starting.':''}else document.getElementById('winner').classList.add('hidden')}
+}
+function renderCalled(){const c=document.getElementById('called');c.innerHTML='';state.drawn.slice(-12).forEach((n,i)=>{const d=document.createElement('div');d.className='ball'+(i===state.drawn.slice(-12).length-1?' current':'');d.textContent=n;c.appendChild(d)})}
+function renderCard(){const box=document.getElementById('bingoCard');box.innerHTML='';if(!state.card)return;state.card.forEach((row,r)=>{const line=document.createElement('div');line.className='bingo-row';row.forEach((n,c)=>{const d=document.createElement('div');d.className='bingo-cell'+(state.marked?.[r]?.[c]?' marked':'')+(n===0?' free':'');d.textContent=n===0?'FREE':n;line.appendChild(d)});box.appendChild(line)})}
+async function refreshState(){try{state=await api('state');render()}catch(e){showNotice(e.message)}}
+async function select(n){try{state=await api('select','POST',{cartela:n});render();showNotice('Cartela '+n+' selected.')}catch(e){showNotice(e.message)}}
+async function leaveCartela(){try{state=await api('leave','POST');render();showNotice('Cartela released.')}catch(e){showNotice(e.message)}}
+function proceed(){if(state?.myCartela)showNotice('Selection is confirmed. The Bingo game starts when the timer reaches 0.');else showNotice('Choose a Cartela first.');}
+function backToRooms(){if(tg?.close)tg.close();else showNotice('Rooms screen will be connected next.')}
+refreshState();setInterval(()=>{if(localDemo){if(demoState.state==='selection'){demoState.selectionSeconds=Math.max(0,demoState.selectionSeconds-1);if(demoState.selectionSeconds===0&&demoState.myCartela){demoState.state='game';demoState.card=demoCards[demoState.myCartela];demoState.marked=demoState.card.map((row,r)=>row.map((n,c)=>r===2&&c===2));}}render()}else refreshState()},1000);
+</script>
+</body>
+</html>
